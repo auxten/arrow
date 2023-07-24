@@ -88,8 +88,8 @@ Status JemallocAllocator::AllocateAligned(int64_t size, int64_t alignment,
     *out = kZeroSizeArea;
     return Status::OK();
   }
-  *out = reinterpret_cast<uint8_t*>(
-      mallocx(static_cast<size_t>(size), MALLOCX_ALIGN(static_cast<size_t>(alignment))));
+  *out = reinterpret_cast<uint8_t*>(je_mallocx(
+      static_cast<size_t>(size), MALLOCX_ALIGN(static_cast<size_t>(alignment))));
   if (*out == NULL) {
     return Status::OutOfMemory("malloc of size ", size, " failed");
   }
@@ -108,9 +108,9 @@ Status JemallocAllocator::ReallocateAligned(int64_t old_size, int64_t new_size,
     *ptr = kZeroSizeArea;
     return Status::OK();
   }
-  *ptr =
-      reinterpret_cast<uint8_t*>(rallocx(*ptr, static_cast<size_t>(new_size),
-                                         MALLOCX_ALIGN(static_cast<size_t>(alignment))));
+  *ptr = reinterpret_cast<uint8_t*>(
+      je_rallocx(*ptr, static_cast<size_t>(new_size),
+                 MALLOCX_ALIGN(static_cast<size_t>(alignment))));
   if (*ptr == NULL) {
     *ptr = previous_ptr;
     return Status::OutOfMemory("realloc of size ", new_size, " failed");
@@ -122,13 +122,13 @@ void JemallocAllocator::DeallocateAligned(uint8_t* ptr, int64_t size, int64_t al
   if (ptr == kZeroSizeArea) {
     DCHECK_EQ(size, 0);
   } else {
-    sdallocx(ptr, static_cast<size_t>(size),
-             MALLOCX_ALIGN(static_cast<size_t>(alignment)));
+    je_sdallocx(ptr, static_cast<size_t>(size),
+                MALLOCX_ALIGN(static_cast<size_t>(alignment)));
   }
 }
 
 void JemallocAllocator::ReleaseUnused() {
-  mallctl("arena." ARROW_STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", NULL, NULL, NULL, 0);
+  je_mallctl("arena." ARROW_STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", NULL, NULL, NULL, 0);
 }
 
 }  // namespace internal
@@ -145,11 +145,11 @@ void JemallocAllocator::ReleaseUnused() {
 Status jemalloc_set_decay_ms(int ms) {
   ssize_t decay_time_ms = static_cast<ssize_t>(ms);
 
-  int err = mallctl("arenas.dirty_decay_ms", nullptr, nullptr, &decay_time_ms,
-                    sizeof(decay_time_ms));
+  int err = je_mallctl("arenas.dirty_decay_ms", nullptr, nullptr, &decay_time_ms,
+                       sizeof(decay_time_ms));
   RETURN_IF_JEMALLOC_ERROR(err);
-  err = mallctl("arenas.muzzy_decay_ms", nullptr, nullptr, &decay_time_ms,
-                sizeof(decay_time_ms));
+  err = je_mallctl("arenas.muzzy_decay_ms", nullptr, nullptr, &decay_time_ms,
+                   sizeof(decay_time_ms));
   RETURN_IF_JEMALLOC_ERROR(err);
 
   return Status::OK();
@@ -170,7 +170,7 @@ Result<int64_t> jemalloc_get_stat(const char* name) {
       std::strcmp(name, "stats.retained") == 0) {
     uint64_t epoch;
     sz = sizeof(epoch);
-    mallctl("epoch", &epoch, &sz, &epoch, sz);
+    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
   }
 
   // Depending on the stat being queried and on the platform, we could need
@@ -178,7 +178,7 @@ Result<int64_t> jemalloc_get_stat(const char* name) {
   {
     uint64_t value = 0;
     sz = sizeof(value);
-    err = mallctl(name, &value, &sz, nullptr, 0);
+    err = je_mallctl(name, &value, &sz, nullptr, 0);
     if (!err) {
       return value;
     }
@@ -187,7 +187,7 @@ Result<int64_t> jemalloc_get_stat(const char* name) {
   if (err == EINVAL) {
     uint32_t value = 0;
     sz = sizeof(value);
-    err = mallctl(name, &value, &sz, nullptr, 0);
+    err = je_mallctl(name, &value, &sz, nullptr, 0);
     if (!err) {
       return value;
     }
@@ -197,7 +197,7 @@ Result<int64_t> jemalloc_get_stat(const char* name) {
 }
 
 Status jemalloc_peak_reset() {
-  int err = mallctl("thread.peak.reset", nullptr, nullptr, nullptr, 0);
+  int err = je_mallctl("thread.peak.reset", nullptr, nullptr, nullptr, 0);
   return err ? arrow::internal::IOErrorFromErrno(err, "Failed resetting thread.peak.")
              : Status::OK();
 }
@@ -210,7 +210,7 @@ Result<std::string> jemalloc_stats_string(const char* opts) {
 }
 
 Status jemalloc_stats_print(const char* opts) {
-  malloc_stats_print(nullptr, nullptr, opts);
+  je_malloc_stats_print(nullptr, nullptr, opts);
   return Status::OK();
 }
 
@@ -218,7 +218,7 @@ Status jemalloc_stats_print(std::function<void(const char*)> write_cb, const cha
   auto cb_wrapper = [](void* opaque, const char* str) {
     (*static_cast<std::function<void(const char*)>*>(opaque))(str);
   };
-  malloc_stats_print(cb_wrapper, &write_cb, opts);
+  je_malloc_stats_print(cb_wrapper, &write_cb, opts);
   return Status::OK();
 }
 
